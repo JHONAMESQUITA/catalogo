@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo - Tarima, Carpa, Hangar, Varios</title>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background: #0f0f0f; color: #fff; min-height: 100vh; }
+        header {
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            padding: 24px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #2a2a4a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        header h1 { font-size: 24px; font-weight: 700; background: linear-gradient(90deg, #e94560, #0f3460); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .status { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #888; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; background: #e94560; }
+        .status-dot.online { background: #00ff88; box-shadow: 0 0 8px #00ff8866; }
+        .status-dot.offline { background: #e94560; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+        .tab {
+            padding: 12px 28px;
+            border: 1px solid #2a2a4a;
+            border-radius: 12px;
+            background: transparent;
+            color: #888;
+            cursor: pointer;
+            font-size: 15px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        .tab:hover { border-color: #e94560; color: #fff; }
+        .tab.active { background: #e94560; color: #fff; border-color: #e94560; }
+        .tab .count {
+            display: inline-block;
+            background: #2a2a4a;
+            color: #aaa;
+            padding: 1px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 6px;
+        }
+        .tab.active .count { background: #ffffff33; color: #fff; }
+        .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 16px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+        }
+        .card:hover { transform: translateY(-4px); box-shadow: 0 8px 30px #00000044; }
+        .card img { width: 100%; height: 220px; object-fit: cover; display: block; }
+        .card .info { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
+        .card .info .name { font-size: 13px; color: #aaa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+        .card .info .date { font-size: 11px; color: #555; }
+        .card .delete-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: none;
+            background: #e94560cc;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card:hover .delete-btn { opacity: 1; }
+        .card .delete-btn:hover { background: #e94560; }
+        .empty { text-align: center; padding: 60px 20px; color: #555; font-size: 16px; }
+        .empty svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.3; }
+        @media (max-width: 600px) {
+            header { padding: 16px; flex-direction: column; gap: 8px; align-items: flex-start; }
+            header h1 { font-size: 20px; }
+            .gallery { grid-template-columns: 1fr; }
+            .tab { flex: 1; text-align: center; padding: 10px 14px; font-size: 13px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Catálogo</h1>
+        <div class="status">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">Conectando...</span>
+        </div>
+    </header>
+    <div class="container">
+        <div class="tabs" id="tabs"></div>
+        <div class="gallery" id="gallery"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        const CATEGORIES = ['tarima', 'carpa', 'hangar', 'varios'];
+        const CAT_NAMES = { tarima: 'Tarima', carpa: 'Carpa', hangar: 'Hangar', varios: 'Varios' };
+        let activeCategory = 'tarima';
+        let catalog = {};
+
+        function renderTabs() {
+            const container = document.getElementById('tabs');
+            container.innerHTML = CATEGORIES.map(cat => `
+                <button class="tab ${cat === activeCategory ? 'active' : ''}" data-cat="${cat}">
+                    ${CAT_NAMES[cat]}
+                    <span class="count">${(catalog[cat] || []).length}</span>
+                </button>
+            `).join('');
+            container.querySelectorAll('.tab').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    activeCategory = btn.dataset.cat;
+                    renderTabs();
+                    renderGallery();
+                });
+            });
+        }
+
+        function renderGallery() {
+            const container = document.getElementById('gallery');
+            const items = catalog[activeCategory] || [];
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="empty" style="grid-column: 1 / -1">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                        <p>No hay imágenes en <strong>${CAT_NAMES[activeCategory]}</strong></p>
+                        <p style="font-size: 13px; margin-top: 8px; color: #444;">Usa la app Kivy para enviar imágenes</p>
+                    </div>
+                `;
+                return;
+            }
+            container.innerHTML = items.map(item => `
+                <div class="card">
+                    <img src="${item.url}?t=${Date.now()}" alt="${item.filename}" loading="lazy">
+                    <button class="delete-btn" data-cat="${activeCategory}" data-file="${item.filename}" title="Eliminar">&times;</button>
+                    <div class="info">
+                        <span class="name">${item.filename}</span>
+                        <span class="date">${item.date}</span>
+                    </div>
+                </div>
+            `).join('');
+            container.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    socket.emit('delete_image', {
+                        category: btn.dataset.cat,
+                        filename: btn.dataset.file
+                    });
+                });
+            });
+        }
+
+        function updateCatalog(data) {
+            catalog = data;
+            renderTabs();
+            renderGallery();
+        }
+
+        socket.on('connect', () => {
+            document.getElementById('statusDot').className = 'status-dot online';
+            document.getElementById('statusText').textContent = 'Conectado en tiempo real';
+        });
+        socket.on('disconnect', () => {
+            document.getElementById('statusDot').className = 'status-dot offline';
+            document.getElementById('statusText').textContent = 'Desconectado';
+        });
+        socket.on('catalog_update', updateCatalog);
+        updateCatalog({{ catalog|tojson }});
+    </script>
+</body>
+</html>
